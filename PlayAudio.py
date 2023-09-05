@@ -95,39 +95,12 @@ class MusicPlayer:
         self.time_label.override_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(1, 1, 1, 1))
         hbox_buttons.pack_start(self.time_label, False, False, 2)
 
+        self.update_time_timer = GObject.timeout_add(1000, self.update_time_label)  # Dodaj timer do cyklicznego aktualizowania czasu odtwarzania
+        hbox_buttons.pack_start(self.time_label, False, False, 2)
+
         vbox = Gtk.VBox(False, 0)
         vbox.pack_start(scrolled_window, True, True, 2)
         vbox.pack_start(hbox_buttons, False, False, 2)
-
-        # Dodaj suwak głośności
-        self.gain_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
-        self.gain_scale.set_digits(0)
-        self.gain_scale.set_value_pos(Gtk.PositionType.BOTTOM)
-        self.gain_scale.add_mark(0, Gtk.PositionType.BOTTOM, "0%")
-        self.gain_scale.add_mark(50, Gtk.PositionType.BOTTOM, "50%")
-        self.gain_scale.add_mark(100, Gtk.PositionType.BOTTOM, "100%")
-        self.gain_scale.connect("value-changed", self.on_gain_scale_change)
-        vbox.pack_start(self.gain_scale, False, False, 2)
-
-        # Dodaj suwak pozycji
-        self.position_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 5)
-        self.position_scale.set_digits(0)
-        self.position_scale.set_value_pos(Gtk.PositionType.BOTTOM)
-        self.position_scale.add_mark(10, Gtk.PositionType.BOTTOM, "10%")
-        self.position_scale.add_mark(20, Gtk.PositionType.BOTTOM, "20%")
-        self.position_scale.add_mark(30, Gtk.PositionType.BOTTOM, "30%")
-        self.position_scale.add_mark(40, Gtk.PositionType.BOTTOM, "40%")
-        self.position_scale.add_mark(50, Gtk.PositionType.BOTTOM, "50%")
-        self.position_scale.add_mark(60, Gtk.PositionType.BOTTOM, "60%")
-        self.position_scale.add_mark(70, Gtk.PositionType.BOTTOM, "70%")
-        self.position_scale.add_mark(80, Gtk.PositionType.BOTTOM, "80%")
-        self.position_scale.add_mark(90, Gtk.PositionType.BOTTOM, "90%")
-        self.position_scale.add_mark(100, Gtk.PositionType.BOTTOM, "100%")
-        self.position_scale.connect("value-changed", self.on_position_scale_change)
-        vbox.pack_start(self.position_scale, False, False, 2)
-
-        # Ustal aktualną pozycję suwaka na początku
-        self.position_scale.set_value(0)
 
         self.window.add(vbox)
         self.window.show_all()
@@ -279,17 +252,6 @@ class MusicPlayer:
         else:
             self.pipeline.set_property("volume", 1.0)
 
-    def on_gain_scale_change(self, widget):
-        value = self.gain_scale.get_value()
-        volume = value / 100  # Przelicz wartość z zakresu 0-100 na zakres 0-1
-        self.pipeline.set_property("volume", volume)
-
-    def on_position_scale_change(self, widget):
-        if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
-            value = self.position_scale.get_value()
-            position = (value / 100) * self.pipeline.query_duration(Gst.Format.TIME)[1]
-            self.pipeline.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, position)
-
     def update_time_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
             position, duration = self.pipeline.query_position(Gst.Format.TIME)[1], self.pipeline.query_duration(Gst.Format.TIME)[1]
@@ -297,12 +259,6 @@ class MusicPlayer:
             position_str = time.strftime("%H:%M:%S", time.gmtime(position_secs))
             duration_str = time.strftime("%H:%M:%S", time.gmtime(duration_secs))
             self.time_label.set_text(f"{position_str} / {duration_str}")
-            # Aktualizuj pozycję suwaka w czasie rzeczywistym
-            if duration > 0:
-                value = (position / duration) * 100
-                self.position_scale.handler_block_by_func(self.on_position_scale_change)
-                self.position_scale.set_value(value)
-                self.position_scale.handler_unblock_by_func(self.on_position_scale_change)
         else:
             self.time_label.set_text("00:00:00 / 00:00:00")
         return True
