@@ -9,7 +9,7 @@ import eyed3
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gst', '1.0')
 gi.require_version('GdkPixbuf', '2.0')
-
+from gi.repository.Gtk import PolicyType
 import gi.repository.GdkPixbuf as GdkPixbuf
 import gi.repository.Gst as Gst
 import gi.repository.Gtk as Gtk
@@ -47,7 +47,7 @@ class MusicPlayer:
         column.set_sort_column_id(0)
 
         scrolled_window = Gtk.ScrolledWindow()
-        scrolled_window.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scrolled_window.set_policy(PolicyType.AUTOMATIC, PolicyType.AUTOMATIC)
         scrolled_window.add(self.playlist_view)
 
         self.play_button = Gtk.Button("Play")
