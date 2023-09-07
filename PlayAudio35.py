@@ -283,7 +283,7 @@ class MusicPlayer:
 
     def shuffle_playlist(self, widget):
         # Get the data from the ListStore and shuffle it
-        playlist_data = [row[:] for row in self.original_playlist]
+        playlist_data = [row[:] for row in self.playlist_store]
         random.shuffle(playlist_data)
 
         # Clear the ListStore and re-add the shuffled data
