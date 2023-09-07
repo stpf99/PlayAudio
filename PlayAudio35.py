@@ -157,6 +157,10 @@ class MusicPlayer:
         self.position_scale.connect("value-changed", self.on_position_scale_change)
         vbox.pack_start(self.position_scale, False, False, 2)
 
+        # Add the progress bar
+        self.progress_bar = Gtk.ProgressBar()
+        vbox.pack_start(self.progress_bar, False, False, 2)
+
         # Set the initial position of the slider to 0
         self.position_scale.set_value(0)
 
@@ -177,6 +181,12 @@ class MusicPlayer:
         # Update the "Now Playing" label in real-time
         self.update_now_playing_label()
         self.update_time_timer = GObject.timeout_add(1000, self.update_time_label)
+        self.update_progress_bar_timer = GObject.timeout_add(1000, self.update_progress_bar)  # Add progress bar update timer
+
+    def on_gain_scale_change(self, widget):
+        value = self.gain_scale.get_value()
+        volume = value / 100  # Przelicz wartość z zakresu 0-100 na zakres 0-1
+        self.pipeline.set_property("volume", volume)
 
     def play(self, widget):
         selection = self.playlist_view.get_selection()
@@ -207,6 +217,19 @@ class MusicPlayer:
     def stop(self, widget):
         self.pipeline.set_state(Gst.State.NULL)
 
+    def on_position_scale_change(self, widget):
+        if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
+            value = self.position_scale.get_value()
+            position = (value / 100) * self.pipeline.query_duration(Gst.Format.TIME)[1]
+            self.pipeline.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, position)
+
+    def update_position_slider(self):
+        if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
+            position, duration = self.pipeline.query_position(Gst.Format.TIME)[1], self.pipeline.query_duration(Gst.Format.TIME)[1]
+            value = (position / duration) * 100
+            self.position_scale.set_value(value)
+        return True
+
     def on_message(self, bus, message):
         t = message.type
         if t == Gst.MessageType.ERROR:
@@ -233,183 +256,196 @@ class MusicPlayer:
                 print("End-Of-Stream reached")
 
         # Handle track change event
-        elif t == Gst.MessageType.ELEMENT:
-            if message.get_structure().get_name() == "GstElementMessageEos":
-                # Track has finished, update the label with the next track if available
-                selection = self.playlist_view.get_selection()
-                model, selected_song_iter = selection.get_selected()
-                if selected_song_iter:
-                    next_song_iter = model.iter_next(selected_song_iter)
-                    if next_song_iter:
-                        artist = model.get_value(next_song_iter, 1)
-                        title = model.get_value(next_song_iter, 4)
-                        album = model.get_value(next_song_iter, 3)
-                        now_playing_text = f"Now Playing: {artist} - {title} from {album}"
-                        self.now_playing_label.set_text(now_playing_text)
+        elif t == Gst.MessageType.STATE_CHANGED:
+            if message.src == self.pipeline:
+                old_state, new_state, pending_state = message.parse_state_changed()
+                if new_state == Gst.State.PLAYING:
+                    self.update_now_playing_label()
+                    self.update_progress_bar()  # Start updating the progress bar
 
-    def load_from_dir(self, widget):
-        dialog = Gtk.FileChooserDialog(
-            "Please choose a directory", None, Gtk.FileChooserAction.SELECT_FOLDER,
-            (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, "Select", Gtk.ResponseType.OK)
-        )
-        response = dialog.run()
-        if response == Gtk.ResponseType.OK:
-            folder_path = dialog.get_filename()
-            for root, dirs, files in os.walk(folder_path):
-                for file in files:
-                    if file.endswith((".mp3", ".wav", ".ogg", ".flac")):
-                        song_path = os.path.join(root, file)
-                        title, artist, genre, album = self.get_metadata_from_id3(song_path)
-                        self.playlist_store.append([song_path, artist, genre, album, title])
-                        self.original_playlist.append([song_path, artist, genre, album, title])  # Dodaj do oryginalnej listy
-        dialog.destroy()
-
-    def append_from_file(self, widget):
-        dialog = Gtk.FileChooserDialog(
-            "Please choose a file", None, Gtk.FileChooserAction.OPEN,
-            (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
-        )
-        response = dialog.run()
-        if response == Gtk.ResponseType.OK:
-            song_path = dialog.get_filename()
-            title, artist, genre, album = self.get_metadata_from_id3(song_path)
-            self.playlist_store.append([song_path, artist, genre, album, title])
-            self.original_playlist.append([song_path, artist, genre, album, title])  # Dodaj do oryginalnej listy
-        dialog.destroy()
-
-    def clear_playlist(self, widget):
-        self.playlist_store.clear()
-        self.original_playlist.clear()  # Wyczyść oryginalną listę
-
-    def shuffle_playlist(self, widget):
-        # Get the data from the ListStore and shuffle it
-        playlist_data = [row[:] for row in self.playlist_store]
-        random.shuffle(playlist_data)
-
-        # Clear the ListStore and re-add the shuffled data
-        self.playlist_store.clear()
-        for row in playlist_data:
-            self.playlist_store.append(row)
-
-    def save_playlist(self, widget):
-        dialog = Gtk.FileChooserDialog(
-            "Save Playlist", None, Gtk.FileChooserAction.SAVE,
-            (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_SAVE, Gtk.ResponseType.OK)
-        )
-        response = dialog.run()
-        if response == Gtk.ResponseType.OK:
-            playlist_file = dialog.get_filename()
-            with open(playlist_file, "w") as f:
-                for row in self.original_playlist:  # Zapisz oryginalną listę
-                    f.write(f"{row[0]}\n")
-        dialog.destroy()
-
-    def load_playlist(self, widget):
-        dialog = Gtk.FileChooserDialog(
-            "Load Playlist", None, Gtk.FileChooserAction.OPEN,
-            (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK)
-        )
-        response = dialog.run()
-        if response == Gtk.ResponseType.OK:
-            playlist_file = dialog.get_filename()
-            with open(playlist_file, "r") as f:
-                lines = f.read().splitlines()
-                for line in lines:
-                    title, artist, genre, album = self.get_metadata_from_id3(line)
-                    self.playlist_store.append([line, artist, genre, album, title])
-                    self.original_playlist.append([line, artist, genre, album, title])  # Dodaj do oryginalnej listy
-        dialog.destroy()
-
-    def toggle_repeat_playlist(self, widget):
-        self.repeat_playlist = widget.get_active()
-
-    def toggle_repeat_current(self, widget):
-        self.repeat_one_enabled = widget.get_active()
-
-    def toggle_mute(self, widget):
-        self.muted = widget.get_active()
-        if self.muted:
-            # Store the current volume before muting
-            self.muted_volume = self.pipeline.get_property("volume")
-            self.pipeline.set_property("volume", 0.0)  # Mute
-        else:
-            # Restore the volume to the stored value
-            self.pipeline.set_property("volume", self.muted_volume)  # Unmute
-
-    def on_gain_scale_change(self, widget):
-        value = self.gain_scale.get_value()
-        volume = value / 100  # Convert the value from the range 0-100 to 0-1
-        self.pipeline.set_property("volume", volume)
-
-    def on_position_scale_change(self, widget):
+    def update_now_playing_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
-            value = self.position_scale.get_value()
-            position = (value / 100) * self.pipeline.query_duration(Gst.Format.TIME)[1]
-            self.pipeline.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, position)
+            selection = self.playlist_view.get_selection()
+            model, selected_song_iter = selection.get_selected()
+            if selected_song_iter:
+                title = model.get_value(selected_song_iter, 4)
+                artist = model.get_value(selected_song_iter, 1)
+                self.now_playing_label.set_markup(
+                    f'<span background="black" foreground="white" font_desc="12">Now Playing:</span> {artist} - {title}')
 
     def update_time_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
             position, duration = self.pipeline.query_position(Gst.Format.TIME)[1], self.pipeline.query_duration(Gst.Format.TIME)[1]
-            position_secs, duration_secs = position // Gst.SECOND, duration // Gst.SECOND
-            position_str = time.strftime("%H:%M:%S", time.gmtime(position_secs))
-            duration_str = time.strftime("%H:%M:%S", time.gmtime(duration_secs))
-
-            if self.playlist_view.get_selection():
-                model, selected_song_iter = self.playlist_view.get_selection().get_selected()
-                if selected_song_iter:
-                    artist = model.get_value(selected_song_iter, 1)
-                    title = model.get_value(selected_song_iter, 4)
-                    album = model.get_value(selected_song_iter, 3)
-                    now_playing_text = f"Now Playing: {artist} - {title} from {album}"
-                    self.now_playing_label.set_text(now_playing_text)
-
-            time_label_text = f"{position_str} / {duration_str}"
-            self.time_label.set_text(time_label_text)
-
+            position_sec = position / Gst.SECOND
+            duration_sec = duration / Gst.SECOND
+            time_str = "{:02}:{:02}:{:02} / {:02}:{:02}:{:02}".format(
+                int(position_sec // 3600),
+                int((position_sec // 60) % 60),
+                int(position_sec % 60),
+                int(duration_sec // 3600),
+                int((duration_sec // 60) % 60),
+                int(duration_sec % 60),
+            )
+            self.time_label.set_text(time_str)
         return True
 
-    def update_now_playing_label(self):
-        if self.playlist_view.get_selection():
-            model, selected_song_iter = self.playlist_view.get_selection().get_selected()
-            if selected_song_iter:
-                artist = model.get_value(selected_song_iter, 1)
-                title = model.get_value(selected_song_iter, 4)
-                album = model.get_value(selected_song_iter, 3)
-                now_playing_text = f"Now Playing: {artist} - {title} from {album}"
-                self.now_playing_label.set_text(now_playing_text)
+    def update_progress_bar(self):
+        if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
+            position, duration = self.pipeline.query_position(Gst.Format.TIME)[1], self.pipeline.query_duration(Gst.Format.TIME)[1]
+            fraction = float(position) / float(duration)
+            self.progress_bar.set_fraction(fraction)
+        return True
 
-    def get_metadata_from_id3(self, file_path):
-        try:
-            audiofile = eyed3.load(file_path)
-            if audiofile and audiofile.tag:
-                artist = str(audiofile.tag.artist)
-                genre = str(audiofile.tag.genre)
-                album = str(audiofile.tag.album)
-                title = str(audiofile.tag.title)
-                return title, artist, genre, album
-        except Exception as e:
-            print(f"Error reading ID3 tag: {e}")
-        return os.path.basename(file_path), "", "", ""
+    def load_from_dir(self, widget):
+        dialog = Gtk.FileChooserDialog("Please choose a directory", self.window, Gtk.FileChooserAction.SELECT_FOLDER,
+                                       ("Cancel", Gtk.ResponseType.CANCEL, "Open", Gtk.ResponseType.OK))
+        dialog.set_default_response(Gtk.ResponseType.OK)
+
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            folder_path = dialog.get_filename()
+            self.load_music_from_folder(folder_path)
+        dialog.destroy()
+
+    def load_music_from_folder(self, folder_path):
+        if folder_path:
+            for root, dirs, files in os.walk(folder_path):
+                for file in files:
+                    if file.endswith(('.mp3', '.wav', '.flac')):
+                        file_path = os.path.join(root, file)
+                        self.append_song_to_playlist(file_path)
+
+    def append_from_file(self, widget):
+        dialog = Gtk.FileChooserDialog("Please choose a file", self.window, Gtk.FileChooserAction.OPEN,
+                                       ("Cancel", Gtk.ResponseType.CANCEL, "Open", Gtk.ResponseType.OK))
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        dialog.set_current_folder(os.path.expanduser("~"))
+
+        filter_mp3 = Gtk.FileFilter()
+        filter_mp3.set_name("MP3 files")
+        filter_mp3.add_mime_type("audio/mpeg")
+        dialog.add_filter(filter_mp3)
+
+        filter_wav = Gtk.FileFilter()
+        filter_wav.set_name("WAV files")
+        filter_wav.add_mime_type("audio/wav")
+        dialog.add_filter(filter_wav)
+
+        filter_flac = Gtk.FileFilter()
+        filter_flac.set_name("FLAC files")
+        filter_flac.add_mime_type("audio/flac")
+        dialog.add_filter(filter_flac)
+
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            file_path = dialog.get_filename()
+            self.append_song_to_playlist(file_path)
+        dialog.destroy()
+
+    def append_song_to_playlist(self, file_path):
+        audiofile = eyed3.load(file_path)
+        title = audiofile.tag.title if audiofile.tag.title else os.path.basename(file_path)
+        artist = audiofile.tag.artist if audiofile.tag.artist else "Unknown Artist"
+        genre = str(audiofile.tag.genre) if audiofile.tag.genre else "Unknown Genre"
+        album = audiofile.tag.album if audiofile.tag.album else "Unknown Album"
+        filename = os.path.basename(file_path)
+
+        self.playlist_store.append([file_path, artist, genre, album, title])
+        self.original_playlist.append([file_path, artist, genre, album, title])
+
+    def clear_playlist(self, widget):
+        self.playlist_store.clear()
+        self.original_playlist.clear()
+
+    def shuffle_playlist(self, widget):
+        random.shuffle(self.original_playlist)
+        self.playlist_store.clear()
+        for song in self.original_playlist:
+            self.playlist_store.append(song)
+
+    def save_playlist(self, widget):
+        dialog = Gtk.FileChooserDialog("Save Playlist", self.window, Gtk.FileChooserAction.SAVE,
+                                       ("Cancel", Gtk.ResponseType.CANCEL, "Save", Gtk.ResponseType.OK))
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        dialog.set_current_folder(os.path.expanduser("~"))
+        dialog.set_current_name("playlist.txt")
+
+        filter_text = Gtk.FileFilter()
+        filter_text.set_name("Text files")
+        filter_text.add_mime_type("text/plain")
+        dialog.add_filter(filter_text)
+
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            file_path = dialog.get_filename()
+            self.save_playlist_to_file(file_path)
+        dialog.destroy()
+
+    def save_playlist_to_file(self, file_path):
+        with open(file_path, 'w') as f:
+            for song in self.original_playlist:
+                f.write(f"{song[0]}\n")
+
+    def load_playlist(self, widget):
+        dialog = Gtk.FileChooserDialog("Open Playlist", self.window, Gtk.FileChooserAction.OPEN,
+                                       ("Cancel", Gtk.ResponseType.CANCEL, "Open", Gtk.ResponseType.OK))
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        dialog.set_current_folder(os.path.expanduser("~"))
+
+        filter_text = Gtk.FileFilter()
+        filter_text.set_name("Text files")
+        filter_text.add_mime_type("text/plain")
+        dialog.add_filter(filter_text)
+
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            file_path = dialog.get_filename()
+            self.load_playlist_from_file(file_path)
+        dialog.destroy()
+
+    def load_playlist_from_file(self, file_path):
+        with open(file_path, 'r') as f:
+            lines = f.read().splitlines()
+            for line in lines:
+                self.append_song_to_playlist(line)
+
+    def toggle_repeat_playlist(self, widget):
+        self.repeat_playlist = not self.repeat_playlist
+        if self.repeat_playlist:
+            self.repeat_one_button.set_active(False)
+
+    def toggle_repeat_current(self, widget):
+        self.repeat_one_enabled = not self.repeat_one_enabled
+        if self.repeat_one_enabled:
+            self.repeat_all_button.set_active(False)
+
+    def toggle_mute(self, widget):
+        if self.muted:
+            # Restore the previous volume
+            self.pipeline.set_property("volume", self.gain_scale.get_value() / 100)
+        else:
+            # Mute by setting the volume to 0
+            self.pipeline.set_property("volume", 0)
+        self.muted = not self.muted
 
     def search_playlist(self, widget):
-        query = self.search_entry.get_text().lower()
-        search_type = self.search_type_combo.get_active_text()  # Pobierz typ wyszukiwania
+        search_text = self.search_entry.get_text()
+        search_type = self.search_type_combo.get_active_text()
+        self.filter_playlist(search_text, search_type)
+
+    def filter_playlist(self, search_text, search_type):
         self.playlist_store.clear()
-
-        for song_data in self.original_playlist:
-            song_path, artist, genre, album, title = song_data
-            # Wykonaj wyszukiwanie w zależności od wybranego typu
-            if (search_type == "Title" and title.lower().find(query) != -1) or \
-               (search_type == "Artist" and artist.lower().find(query) != -1) or \
-               (search_type == "Genre" and genre.lower().find(query) != -1) or \
-               (search_type == "Album" and album.lower().find(query) != -1):
-                self.playlist_store.append([song_path, artist, genre, album, title])
-
-    def run(self):
-        Gtk.main()
-
+        for song in self.original_playlist:
+            if search_type == "Title" and search_text.lower() in song[4].lower():
+                self.playlist_store.append(song)
+            elif search_type == "Artist" and search_text.lower() in song[1].lower():
+                self.playlist_store.append(song)
+            elif search_type == "Genre" and search_text.lower() in song[2].lower():
+                self.playlist_store.append(song)
+            elif search_type == "Album" and search_text.lower() in song[3].lower():
+                self.playlist_store.append(song)
 
 if __name__ == "__main__":
     player = MusicPlayer()
-    player.run()
+    Gtk.main()
 
