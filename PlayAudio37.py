@@ -11,6 +11,7 @@ gi.require_version('Gst', '1.0')
 import gi.repository.Gst as Gst
 import numpy as np
 gi.require_version('Gtk', '3.0')
+import pyaudio
 
 class MusicPlayer:
     def __init__(self):
@@ -183,6 +184,23 @@ class MusicPlayer:
         self.update_now_playing_label()
         self.update_time_timer = GObject.timeout_add(1000, self.update_time_label)
         self.update_progress_bar_timer = GObject.timeout_add(1000, self.update_progress_bar)  # Add progress bar update timer
+        self.pipeline = Gst.ElementFactory.make("playbin", "audio-player")
+        self.bus = self.pipeline.get_bus()
+        self.bus.add_signal_watch()
+        self.bus.connect("message::eos", self.on_eos)
+        self.bus.connect("message::error", self.on_error)
+
+
+        self.fft_data = None
+        self.pipeline.set_state(Gst.State.READY)
+
+        # Inicjalizacja PyAudio
+        self.pa = pyaudio.PyAudio()
+        self.stream = None
+
+
+        # Ustalamy rozmiar paczki (chunk_size)
+        self.chunk_size = 1024   # Przykładowy rozmiar paczki
 
     def draw_spectrum(self, widget, cr):
         if self.fft_data is not None:
@@ -203,7 +221,7 @@ class MusicPlayer:
                 transparency = 0.01 + (bar_height * 0.5)  # Od 50% do 100%
                 
                 # Nowa wysokość słupka - minimum 30% długości
-                new_bar_height = max(0.3, bar_height)
+                #new_bar_height = max(0.3, bar_height)
                 
                 color = (0, 128, 255)  # Kolor czerwony
 
@@ -224,10 +242,96 @@ class MusicPlayer:
                 _, position = self.pipeline.query_position(Gst.Format.TIME)
                 _, duration = self.pipeline.query_duration(Gst.Format.TIME)
                 progress = float(position) / float(duration) if duration > 0 else 0.0
+                
+                # Odczytaj dane audio z mikrofonu
+                audio_data = self.read_audio_data()
+                
+                # Oblicz FFT na podstawie danych audio
                 num_samples = 256  # Przykładowa liczba próbek
-                self.fft_data = np.random.rand(num_samples) * progress
+                fft_data = np.fft.fft(audio_data)
+                fft_data = np.abs(fft_data[:num_samples])  # Pobierz amplitudy tylko pierwszych próbek
+                
+                self.fft_data = fft_data * progress
                 GObject.idle_add(self.drawing_area.queue_draw)
         return True
+
+    def read_audio_data(self):
+        if self.stream is None:
+            # Konfiguracja strumienia audio
+            sample_rate = 44100  # Przykładowa częstotliwość próbkowania
+            audio_format = pyaudio.paInt16
+
+            self.stream = self.pa.open(
+                format=audio_format,
+                channels=1,  # Mono
+                rate=sample_rate,
+                input=True,
+                frames_per_buffer=self.chunk_size  # Używamy chunk_size jako rozmiar paczki
+            )
+
+        try:
+            audio_data = self.stream.read(self.chunk_size)  # Używamy self.chunk_size
+            audio_data = np.frombuffer(audio_data, dtype=np.int16)
+            return audio_data
+        except IOError as e:
+            print("Błąd odczytu danych audio:", e)
+            return np.zeros(self.chunk_size, dtype=np.int16) 
+
+    def play_audio(self, widget):
+        self.pipeline.set_state(Gst.State.PLAYING)
+
+    def pause_audio(self, widget):
+        self.pipeline.set_state(Gst.State.PAUSED)
+
+    def stop_audio(self, widget):
+        self.pipeline.set_state(Gst.State.READY)
+
+    def load_audio_file(self, widget):
+        file_uri = self.file_chooser.get_uri()
+        self.pipeline.set_property("uri", file_uri)
+
+    def on_eos(self, bus, message):
+        self.pipeline.set_state(Gst.State.READY)
+
+    def on_error(self, bus, message):
+        error, debug_info = message.parse_error()
+        print("Error: %s" % error, debug_info)
+
+    def draw_spectrum(self, widget, cr):
+        if self.fft_data is not None:
+            cr.set_source_rgb(64, 128, 255)
+            cr.paint()
+
+            num_bars = 128  # Liczba słupków
+            bar_width = widget.get_allocated_width() / num_bars
+            max_amplitude = np.max(self.fft_data)
+
+            for i in range(num_bars):
+                start = int((i / num_bars) * len(self.fft_data))
+                end = int(((i + 1) / num_bars) * len(self.fft_data))
+                bar_height = np.max(self.fft_data[start:end])
+                bar_height /= max_amplitude  # Normalizacja do zakresu 0-1
+
+                # Oblicz przezroczystość na podstawie wysokości słupka
+                transparency = 0.01 + (bar_height * 0.5)  # Od 50% do 100%
+                
+                # Nowa wysokość słupka - maksymalnie 60% długości
+                if bar_height < 0.8:
+                    new_bar_height = min(0.6, bar_height)
+                else:
+                    new_bar_height = bar_height
+                
+                color = (0, 128, 255)  # Kolor czerwony
+
+                self.draw_bar(cr, i * bar_width, (1 - new_bar_height) * widget.get_allocated_height(), bar_width, new_bar_height * widget.get_allocated_height(), color, transparency)
+
+    def draw_bar(self, cr, x, y, width, height, color, transparency):
+        red, green, blue = color
+
+        # Ustaw kolor słupka z określoną przezroczystością
+        cr.set_source_rgba(red, green, blue, transparency)
+        cr.rectangle(x, y, width / 2, height)
+        cr.fill()
 
 
     def on_gain_scale_change(self, widget):
