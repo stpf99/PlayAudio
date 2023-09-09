@@ -204,10 +204,10 @@ class MusicPlayer:
 
     def draw_spectrum(self, widget, cr):
         if self.fft_data is not None:
-            cr.set_source_rgb(64, 128, 255)
+            cr.set_source_rgb(255, 255, 255)
             cr.paint()
 
-            num_bars = 32  # Liczba słupków
+            num_bars = 256  # Liczba słupków
             bar_width = widget.get_allocated_width() / num_bars
             max_amplitude = np.max(self.fft_data)
 
@@ -218,12 +218,12 @@ class MusicPlayer:
                 bar_height /= max_amplitude  # Normalizacja do zakresu 0-1
 
                 # Oblicz przezroczystość na podstawie wysokości słupka
-                transparency = 0.01 + (bar_height * 0.5)  # Od 50% do 100%
+                transparency = 0.01 + (bar_height * 0.5)
                 
                 # Nowa wysokość słupka - minimum 30% długości
-                #new_bar_height = max(0.3, bar_height)
+                new_bar_height = bar_height
                 
-                color = (0, 128, 255)  # Kolor czerwony
+                color = (0, 0, 128)  # Kolor
 
                 self.draw_bar(cr, i * bar_width, (1 - new_bar_height) * widget.get_allocated_height(), bar_width, new_bar_height * widget.get_allocated_height(), color, transparency)
 
@@ -231,8 +231,8 @@ class MusicPlayer:
         red, green, blue = color
 
         # Ustaw kolor słupka z określoną przezroczystością
-        cr.set_source_rgba(red, green, blue, transparency)
-        cr.rectangle(x, y, width / 2, height)
+        cr.set_source_rgba(0, 0, 128)
+        cr.rectangle(x, y, width, height)
         cr.fill()
 
     def update_bars(self):
@@ -277,18 +277,6 @@ class MusicPlayer:
             print("Błąd odczytu danych audio:", e)
             return np.zeros(self.chunk_size, dtype=np.int16) 
 
-    def play_audio(self, widget):
-        self.pipeline.set_state(Gst.State.PLAYING)
-
-    def pause_audio(self, widget):
-        self.pipeline.set_state(Gst.State.PAUSED)
-
-    def stop_audio(self, widget):
-        self.pipeline.set_state(Gst.State.READY)
-
-    def load_audio_file(self, widget):
-        file_uri = self.file_chooser.get_uri()
-        self.pipeline.set_property("uri", file_uri)
 
     def on_eos(self, bus, message):
         self.pipeline.set_state(Gst.State.READY)
@@ -297,41 +285,7 @@ class MusicPlayer:
         error, debug_info = message.parse_error()
         print("Error: %s" % error, debug_info)
 
-    def draw_spectrum(self, widget, cr):
-        if self.fft_data is not None:
-            cr.set_source_rgb(64, 128, 255)
-            cr.paint()
-
-            num_bars = 128  # Liczba słupków
-            bar_width = widget.get_allocated_width() / num_bars
-            max_amplitude = np.max(self.fft_data)
-
-            for i in range(num_bars):
-                start = int((i / num_bars) * len(self.fft_data))
-                end = int(((i + 1) / num_bars) * len(self.fft_data))
-                bar_height = np.max(self.fft_data[start:end])
-                bar_height /= max_amplitude  # Normalizacja do zakresu 0-1
-
-                # Oblicz przezroczystość na podstawie wysokości słupka
-                transparency = 0.01 + (bar_height * 0.5)  # Od 50% do 100%
-                
-                # Nowa wysokość słupka - maksymalnie 60% długości
-                if bar_height < 0.8:
-                    new_bar_height = min(0.6, bar_height)
-                else:
-                    new_bar_height = bar_height
-                
-                color = (0, 128, 255)  # Kolor czerwony
-
-                self.draw_bar(cr, i * bar_width, (1 - new_bar_height) * widget.get_allocated_height(), bar_width, new_bar_height * widget.get_allocated_height(), color, transparency)
-
-    def draw_bar(self, cr, x, y, width, height, color, transparency):
-        red, green, blue = color
-
-        # Ustaw kolor słupka z określoną przezroczystością
-        cr.set_source_rgba(red, green, blue, transparency)
-        cr.rectangle(x, y, width / 2, height)
-        cr.fill()
+   
 
 
     def on_gain_scale_change(self, widget):
