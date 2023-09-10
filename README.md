@@ -7,4 +7,4 @@
 
 # PlayAudio42
 
-<img width="964" alt="playaudio42" src="https://github.com/stpf99/PlayAudio/blob/774453a6e1e7727bc25df69addf77705f63d4a47/PlayAudio42.py">
+<img width="964" alt="playaudio42" src="https://github.com/stpf99/PlayAudio/blob/1075228c19d3b86d5c3f7476eaf7628b0d84d2ac/PlayAudio42.png">
