@@ -86,12 +86,33 @@ class MusicPlayer:
         scrolled_window.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scrolled_window.add(self.playlist_view)
 
+        self.search_entry = Gtk.Entry()
+        self.search_entry.set_placeholder_text("Search...")
+        self.search_entry.connect("activate", self.search_playlist)
+
+        # Dodaj rozwijalną listę dla typu wyszukiwania
+        self.search_type_combo = Gtk.ComboBoxText()
+        self.search_type_combo.append_text("Title")
+        self.search_type_combo.append_text("Artist")
+        self.search_type_combo.append_text("Genre")
+        self.search_type_combo.append_text("Album")
+        self.search_type_combo.set_active(0)  # Domyślnie wybierz "Title" jako typ wyszukiwania
+
+        # Dodaj przycisk "Search"
+        self.search_button = Gtk.Button("Search")
+        self.search_button.connect("clicked", self.search_playlist)
+
+        hbox_search = Gtk.HBox(False, 0)
+        hbox_search.pack_start(self.search_type_combo, False, False, 2)  # Dodaj rozwijalną listę
+        hbox_search.pack_start(self.search_entry, True, True, 2)
+        hbox_search.pack_start(self.search_button, False, False, 2)
 
         # Create an HPaned container to split the window horizontally
         self.hpaned = Gtk.HPaned()
         vbox = Gtk.VBox(False, 0)
         vbox.pack_start(self.now_playing_label, False, False, 2)
         vbox.pack_start(self.hpaned, True, True, 0)
+        vbox.pack_start(hbox_search, False, False, 2)  # Dodaj pole wyszukiwania i przycisk "Search"
 
         self.window.add(vbox)
 
@@ -156,26 +177,7 @@ class MusicPlayer:
         self.time_label.override_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(1, 1, 1, 1))
         hbox_buttons.pack_start(self.time_label, False, False, 2)
 
-        self.search_entry = Gtk.Entry()
-        self.search_entry.set_placeholder_text("Search...")
-        self.search_entry.connect("activate", self.search_playlist)
 
-        # Dodaj rozwijalną listę dla typu wyszukiwania
-        self.search_type_combo = Gtk.ComboBoxText()
-        self.search_type_combo.append_text("Title")
-        self.search_type_combo.append_text("Artist")
-        self.search_type_combo.append_text("Genre")
-        self.search_type_combo.append_text("Album")
-        self.search_type_combo.set_active(0)  # Domyślnie wybierz "Title" jako typ wyszukiwania
-
-        # Dodaj przycisk "Search"
-        self.search_button = Gtk.Button("Search")
-        self.search_button.connect("clicked", self.search_playlist)
-
-        hbox_search = Gtk.HBox(False, 0)
-        hbox_search.pack_start(self.search_type_combo, False, False, 2)  # Dodaj rozwijalną listę
-        hbox_search.pack_start(self.search_entry, True, True, 2)
-        hbox_search.pack_start(self.search_button, False, False, 2)
         self.drawing_area = Gtk.DrawingArea()
         self.drawing_area.connect("draw", self.draw_spectrum)
 
