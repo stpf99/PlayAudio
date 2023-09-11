@@ -292,7 +292,7 @@ class MusicPlayer:
                 self.play_audio_file(song_path)
 
             GObject.timeout_add(100, self.update_bars)
-
+            self.update_now_playing_label_timeout = GLib.timeout_add(1000, self.update_now_playing_label)
             # Extract and display album cover for the currently playing song
             self.extract_and_display_album_cover(song_path)
 
