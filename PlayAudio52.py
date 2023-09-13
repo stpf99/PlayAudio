@@ -277,20 +277,10 @@ class MusicPlayer:
         vbox.pack_start(self.drawing_area, True, True, 2)
         self.window.show_all()
 
-        self.pipeline = Gst.ElementFactory.make("playbin", "player")
-        self.pipeline.set_property("volume", 0.25)  # Set default volume to 25%
-        self.playback_paused = False
 
-        self.muted = False
-        self.muted_volume = 0.25  # Set initial muted volume to 25%
-
-        bus = self.pipeline.get_bus()
-        bus.add_signal_watch()
-        bus.connect("message", self.on_message)
 
         self.playback_paused = False
-        self.repeat_playlist = False
-        self.repeat_current = False
+
         self.muted = False
 
         self.current_song_iter = None
@@ -302,10 +292,11 @@ class MusicPlayer:
         
         self.update_time_timer = GLib.timeout_add(1000, self.update_time_label)
         self.update_progress_bar_timer = GLib.timeout_add(1000, self.update_progress_bar)  # Add progress bar update timer
-        self.pipeline = Gst.ElementFactory.make("playbin", "audio-player")
+  
+        self.pipeline = Gst.ElementFactory.make("playbin", "player")
         self.bus = self.pipeline.get_bus()
         self.bus.add_signal_watch()
-        self.repeat_mode = "off"  
+  
         self.fft_data = None
         self.pipeline.set_state(Gst.State.READY)
         # Inicjalizacja PyAudio
@@ -319,13 +310,58 @@ class MusicPlayer:
         self.repeat_one_enabled = False
         self.repeat_all_enabled = False
 
+        self.pipeline = Gst.ElementFactory.make("playbin", "player")
+        self.pipeline.set_property("volume", 0.25)  # Set default volume to 25%
+        self.playback_paused = False
+
+        self.muted = False
+        self.muted_volume = 0.25  # Set initial muted volume to 25%
+
+        bus = self.pipeline.get_bus()
+        bus.add_signal_watch()
+        bus.connect("message", self.on_message)
 
     def repeat_one(self):
         if self.repeat_mode == "one" and self.audio_buffer is None:
-            self.play_audio_file(self.current_song_name)
+            # Pobierz aktualnie odtwarzany utwór
+            selection = self.playlist_view.get_selection()
+            model, selected_song_iter = selection.get_selected()
+            if selected_song_iter:
+                self.pipeline.set_state(Gst.State.PLAYING)  # Kontynuuj odtwarzanie
             return True
         elif self.repeat_mode == "one" and self.pipeline.get_state(0)[1] == Gst.State.NULL:
             self.play_audio_file(self.current_song_name)
+            return True
+        return False
+
+    def repeat_all(self):
+        if self.repeat_mode == "all" and self.audio_buffer is None:
+            # Pobierz aktualnie odtwarzany utwór
+            selection = self.playlist_view.get_selection()
+            model, selected_song_iter = selection.get_selected()
+            if selected_song_iter:
+                # Pobierz następny utwór na liście
+                next_song_iter = self.playlist_store.iter_next(selected_song_iter)
+                if not next_song_iter:
+                    # Jeśli nie ma następnego utworu, przejdź na początek listy
+                    next_song_iter = self.playlist_store.get_iter_first()
+                if next_song_iter:
+                    next_song_name = self.playlist_store.get_value(next_song_iter, 0)
+                    self.play_audio_file(next_song_name)
+            return True
+        elif self.repeat_mode == "all" and self.pipeline.get_state(0)[1] == Gst.State.NULL:
+            # Pobierz aktualnie odtwarzany utwór
+            selection = self.playlist_view.get_selection()
+            model, selected_song_iter = selection.get_selected()
+            if selected_song_iter:
+                # Pobierz następny utwór na liście
+                next_song_iter = self.playlist_store.iter_next(selected_song_iter)
+                if not next_song_iter:
+                    # Jeśli nie ma następnego utworu, przejdź na początek listy
+                    next_song_iter = self.playlist_store.get_iter_first()
+                if next_song_iter:
+                    next_song_name = self.playlist_store.get_value(next_song_iter, 0)
+                    self.play_audio_file(next_song_name)
             return True
         return False
 
@@ -429,11 +465,6 @@ class MusicPlayer:
         if selected_song_iter:
             song_path = model.get_value(selected_song_iter, 0)
             self.play_audio_file(song_path)
-
-            if self.repeat_mode == "one":
-                GObject.timeout_add(100, self.repeat_one)
-            else:
-                GObject.timeout_add(100, self.update_bars)
 
             GObject.timeout_add(100, self.update_bars)
             self.update_next_playing_label_timeout = GLib.timeout_add(100, self.update_next_playing_label)
@@ -918,38 +949,14 @@ class MusicPlayer:
             return np.zeros(self.chunk_size, dtype=np.int16)
 
     def play_audio_file(self, file_path):
-        if self.stream_audio_output is not None:
-            self.stream_audio_output.close()
-            self.stream_audio_output = None
-
-        if self.buffer_ready:
-            try:
-                audio_data = np.frombuffer(self.audio_buffer, dtype=np.int16)
-
-                self.stream_audio_output = self.pa.open(
-                    format=self.pa.get_format_from_width(self.sample_width),
-                    channels=self.num_channels,
-                    rate=self.sample_rate,
-                    output=True
-                )
-                self.stream_audio_output.write(audio_data.tobytes())
-                self.stream_audio_output.close()
-            except Exception as e:
-                print(f"Error while playing audio from buffer: {e}")
-                self.buffer_ready = False
-        else:
-            try:
-                encoded_file_path = quote(file_path)
-                self.pipeline.set_state(Gst.State.NULL)
-                self.pipeline.set_property("uri", f"file://{encoded_file_path}")
-                self.pipeline.set_state(Gst.State.PLAYING)
-                self.playback_paused = False
-
-                # Ustaw nowo odtwarzany utwór
-                self.now_playing_track = file_path
-
-            except Exception as e:
-                print(f"Error while playing audio: {e}")
+        try:
+            encoded_file_path = quote(file_path)
+            self.pipeline.set_state(Gst.State.NULL)
+            self.pipeline.set_property("uri", f"file://{encoded_file_path}")
+            self.pipeline.set_state(Gst.State.PLAYING)
+            self.playback_paused = False
+        except Exception as e:
+            print(f"Error while playing audio: {e}")
 
 
 
@@ -974,6 +981,8 @@ class MusicPlayer:
             value = self.position_scale.get_value()
             position = (value / 100) * self.pipeline.query_duration(Gst.Format.TIME)[1]
             self.pipeline.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, position)
+            self.pipeline.set_state(Gst.State.PLAYING)  # Rozpocznij ponowne odtwarzanie
+
 
     def update_position_slider(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
@@ -990,14 +999,16 @@ class MusicPlayer:
             print("Error: %s" % err, debug)
         elif t == Gst.MessageType.EOS:
             if self.repeat_mode == "one":
-                # Repeat the current song by seeking to the start
+                # Powtórz aktualny utwór, przewijając do początku
                 self.pipeline.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, 0)
+                self.pipeline.set_state(Gst.State.PLAYING)  # Rozpocznij ponowne odtwarzanie
             elif self.repeat_mode == "all":
                 selection = self.playlist_view.get_selection()
                 model, selected_song_iter = selection.get_selected()
                 if selected_song_iter:
                     next_song_iter = model.iter_next(selected_song_iter)
                     if not next_song_iter:
+                        # Jeśli to koniec playlisty, zacznij od początku
                         next_song_iter = model.get_iter_first()
                     if next_song_iter:
                         next_song_path = model.get_value(next_song_iter, 0)
@@ -1006,13 +1017,15 @@ class MusicPlayer:
                 self.pipeline.set_state(Gst.State.NULL)
                 print("End-Of-Stream reached")
 
-        # Handle track change event
+        # Obsługa zdarzenia zmiany utworu
         elif t == Gst.MessageType.STATE_CHANGED:
             if message.src == self.pipeline:
                 old_state, new_state, pending_state = message.parse_state_changed()
                 if new_state == Gst.State.PLAYING:
                     self.update_now_playing_label()
-                    self.update_progress_bar()  # Start updating
+                    self.update_progress_bar()  # Rozpocznij aktualizację paska postępu
+
+
 
     def update_now_playing_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
