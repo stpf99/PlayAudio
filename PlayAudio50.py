@@ -334,8 +334,9 @@ class MusicPlayer:
             next_song_path = self.playlist_store.get_value(next_song_iter, 0)
             self.play_audio_file(next_song_path)
             self.current_song_iter = next_song_iter
-            self.update_now_playing_label_timeout = GLib.timeout_add(100, self.update_now_playing_label)
 
+            # Przekazujemy ścieżkę do pliku audio do funkcji extract_and_display_album_cover
+            self.extract_and_display_album_cover(next_song_path)
 
     def play_previous_track(self, widget):
         previous_song_iter = self.get_previous_song_iter()
@@ -343,9 +344,9 @@ class MusicPlayer:
             previous_song_path = self.playlist_store.get_value(previous_song_iter, 0)
             self.play_audio_file(previous_song_path)
             self.current_song_iter = previous_song_iter
-            self.update_now_playing_label_timeout = GLib.timeout_add(100, self.update_now_playing_label)
 
-
+            # Przekazujemy ścieżkę do pliku audio do funkcji extract_and_display_album_cover
+            self.extract_and_display_album_cover(previous_song_path)
 
     def visualize(self, widget, cr):
         if self.visualizing:
