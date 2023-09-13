@@ -28,13 +28,12 @@ class MusicPlayer:
         self.now_playing_label = Gtk.Label()
         self.now_playing_label.set_name("now-playing-label")
         self.now_playing_label.set_markup('<span font_desc="12">Now Playing:</span>')
-        self.songh_path = ""
 
+        self.now_playing_track = None
         self.audio_buffer = bytearray()
         self.buffer_duration = 3  # Czas buforowania w sekundach
         self.buffer_chunk_size = 1024  # Rozmiar bufora
         self.buffer_ready = False
-        self.current_song_name = ""  # Dodaj nowy atrybut do przechowywania nazwy aktualnej piosenki
 
         # Konfiguracja strumienia audio
         self.pa = pyaudio.PyAudio()
@@ -134,6 +133,13 @@ class MusicPlayer:
         self.pause_button.connect("clicked", self.toggle_pause)
         self.stop_button = Gtk.Button("Stop")
         self.stop_button.connect("clicked", self.stop)
+        self.next_button = Gtk.Button("Next")
+        self.next_button.connect("clicked", self.play_next_track)
+
+        self.previous_button = Gtk.Button("Previous")
+        self.previous_button.connect("clicked", self.play_previous_track)
+        self.repeat_all_enabled = False
+        self.repeat_one_enabled = False
 
         self.load_from_dir_button = Gtk.Button("Load Dir")
         self.load_from_dir_button.connect("clicked", self.load_from_dir)
@@ -148,9 +154,9 @@ class MusicPlayer:
         self.load_playlist_button = Gtk.Button("Load Playlist")
         self.load_playlist_button.connect("clicked", self.load_playlist)
         self.repeat_all_button = Gtk.ToggleButton("Repeat Playlist")
-        self.repeat_all_button.connect("toggled", self.repeat_all)
+        self.repeat_all_button.connect("toggled", self.toggle_repeat_all)
         self.repeat_one_button = Gtk.ToggleButton("Repeat Current")
-        self.repeat_one_button.connect("toggled", self.repeat_one)
+        self.repeat_one_button.connect("toggled", self.toggle_repeat_one)
         self.mute_button = Gtk.ToggleButton("Mute")
         self.mute_button.connect("toggled", self.toggle_mute)
 
@@ -158,6 +164,8 @@ class MusicPlayer:
         hbox_buttons.pack_start(self.play_button, True, True, 2)
         hbox_buttons.pack_start(self.pause_button, True, True, 2)
         hbox_buttons.pack_start(self.stop_button, True, True, 2)
+        hbox_buttons.pack_start(self.next_button, True, True, 2)
+        hbox_buttons.pack_start(self.previous_button, True, True, 2)
         hbox_buttons.pack_start(self.load_from_dir_button, True, True, 2)
         hbox_buttons.pack_start(self.append_from_file_button, True, True, 2)
         hbox_buttons.pack_start(self.clear_playlist_button, True, True, 2)
@@ -187,17 +195,18 @@ class MusicPlayer:
         self.search_type_combo.set_active(0)  # Domyślnie wybierz "Title" jako typ wyszukiwania
         # Dodaj rozwijalną listę dla wyboru wizualizacji
         self.visualization_type_combo = Gtk.ComboBoxText()
+        self.visualization_type_combo.append_text("None")
         self.visualization_type_combo.append_text("Spectrum")
         self.visualization_type_combo.append_text("Waveform")
         self.visualization_type_combo.append_text("Points")
         self.visualization_type_combo.append_text("Tonal Transition")
-        self.visualization_type_combo.set_active(0)  # Domyślnie wybierz "Spectrum
+        self.visualization_type_combo.set_active(0)  # Domyślnie wybierz "None"
         # Dodaj przycisk "Search"
         self.search_button = Gtk.Button("Search")
         self.search_button.connect("clicked", self.search_playlist)
         # Dodaj przycisk "Visualize"
         self.visualize_button = Gtk.Button("Visualize")
-        self.visualize_button.connect("clicked", self.visualize)
+        self.visualize_button.connect("clicked", self.toggle_visualization)
         hbox_search = Gtk.HBox(False, 0)
         hbox_search.pack_start(self.search_type_combo, False, False, 2)  # Dodaj rozwijalną listę
         hbox_search.pack_start(self.search_entry, True, True, 2)
@@ -258,7 +267,6 @@ class MusicPlayer:
 
         self.pipeline = Gst.ElementFactory.make("playbin", "player")
         self.pipeline.set_property("volume", 0.25)  # Set default volume to 25%
-
         self.playback_paused = False
 
         self.muted = False
@@ -269,10 +277,12 @@ class MusicPlayer:
         bus.connect("message", self.on_message)
 
         self.playback_paused = False
-
+        self.repeat_playlist = False
+        self.repeat_current = False
         self.muted = False
 
         self.current_song_iter = None
+        self.current_song_name = ""
 
         self.init_gst()
         self.init_audio_input()
@@ -283,59 +293,98 @@ class MusicPlayer:
         self.pipeline = Gst.ElementFactory.make("playbin", "audio-player")
         self.bus = self.pipeline.get_bus()
         self.bus.add_signal_watch()
-        self.repeat_mode = "none"  # Dodajemy atrybut repeat_mode
+        self.repeat_mode = "off"  
         self.fft_data = None
         self.pipeline.set_state(Gst.State.READY)
         # Inicjalizacja PyAudio
         self.pa = pyaudio.PyAudio()
         self.stream_audio_input = None  # Strumień audio dla PyAudio
         self.stream_audio_output = None  # Strumień audio dla GStreamer
-        self.buffer_ready = False
-        self.current_song_name = ""
+        # Inne inicjalizacje...
+        self.visualizing = False  # Inicjalnie wizualizacja jest wyłączona
 
-    def get_song_path_by_name(self, song_path):
-        for selected_song_iter in self.original_playlist:
-            if selected_song_iter == song_path:
-                return song_path[0]
-        return None
+    def toggle_visualization(self, widget):
+        self.visualizing = not self.visualizing  # Zmień stan wizualizacji (włącz/wyłącz)
+        self.visualize_button.set_label("Stop Visualization" if self.visualizing else "Visualize")
 
-    def next_song(self):
-        if self.toggle_repeat_current:
-            song_path = self.current_song_path
-            print(f"Current song '{self.current_song_name}' on repeat")
-        elif self.toggle_repeat_playlist:
-            selection = self.playlist_view.get_selection()
-            model, selected_song_iter = selection.get_selected()
-            next_song_iter = model.iter_next(selected_song_iter)
+    def toggle_repeat_mode(self, widget):
+        if self.repeat_mode == "off":
+            self.repeat_mode = "one"
+            print("Repeat mode: Repeat One")
+        elif self.repeat_mode == "one":
+            self.repeat_mode = "all"
+            print("Repeat mode: Repeat All")
+        else:
+            self.repeat_mode = "off"
+            print("Repeat mode: Off")
 
-            if next_song_iter:
-                song_path = model.get_value(next_song_iter, 0)
-                song_title = model.get_value(next_song_iter, 4)
-                print(f"Next song in playlist '{song_title}' on repeat")
-            else:
-                song_path = None
+    def on_playlist_view_row_activated(self, view, path, column):
+        model = view.get_model()
+        song_path = model[path][0]
+        self.play_audio_file(song_path)
+        self.current_song_iter = model.get_iter(path)
+        self.update_now_playing_label_timeout = GLib.timeout_add(100, self.update_now_playing_label)
 
-        if song_path:
-            self.play_audio_file(song_path)
+        # Ustaw nowo odtwarzany utwór
+        self.now_playing_track = song_path
+
+    def play_next_track(self, widget):
+        next_song_iter = self.get_next_song_iter()
+        if next_song_iter:
+            next_song_path = self.playlist_store.get_value(next_song_iter, 0)
+            self.play_audio_file(next_song_path)
+            self.current_song_iter = next_song_iter
+            self.update_now_playing_label_timeout = GLib.timeout_add(100, self.update_now_playing_label)
+
+
+    def play_previous_track(self, widget):
+        previous_song_iter = self.get_previous_song_iter()
+        if previous_song_iter:
+            previous_song_path = self.playlist_store.get_value(previous_song_iter, 0)
+            self.play_audio_file(previous_song_path)
+            self.current_song_iter = previous_song_iter
+            self.update_now_playing_label_timeout = GLib.timeout_add(100, self.update_now_playing_label)
+
 
 
     def visualize(self, widget, cr):
-        selected_text = self.visualization_type_combo.get_active_text()
-        if selected_text == "Spectrum":
-          self.draw_1(widget, cr)
-        elif selected_text == "Waveform":
-          self.draw_2(widget, cr)
-        elif selected_text == "Points":
-          self.draw_3(widget, cr)
-        elif selected_text == "Tonal Transition":
-          self.draw_4(widget, cr)
+        if self.visualizing:
+            selected_text = self.visualization_type_combo.get_active_text()
+            if selected_text == "none":
+                self.draw_0(widget, cr)
+            if selected_text == "Spectrum":
+                self.draw_1(widget, cr)
+            elif selected_text == "Waveform":
+                self.draw_2(widget, cr)
+            elif selected_text == "Points":
+                self.draw_3(widget, cr)
+            elif selected_text == "Tonal Transition":
+                self.draw_4(widget, cr)
+            else:
+                # Obsługa innych opcji wizualizacji
+                pass
+
+    def get_next_song_iter(self):
+        if self.current_song_iter:
+            current_iter = self.current_song_iter
+            next_iter = self.playlist_store.iter_next(current_iter)
+            if next_iter is not None:
+                return next_iter
+            else:
+                return self.playlist_store.get_iter_first()
         else:
-            # Obsługa innych opcji wizualizacji
-            pass
+            return self.playlist_store.get_iter_first()
 
-
-    def set_repeat_mode(self, mode):
-        self.repeat_mode = mode
+    def get_previous_song_iter(self):
+        if self.current_song_iter:
+            current_iter = self.current_song_iter
+            previous_iter = self.playlist_store.iter_previous(current_iter)
+            if previous_iter is not None:
+                return previous_iter
+            else:
+                return self.playlist_store.get_iter_first()
+        else:
+            return self.playlist_store.get_iter_first()
 
 
     def play(self, widget):
@@ -346,7 +395,6 @@ class MusicPlayer:
             song_path = model.get_value(selected_song_iter, 0)
             self.play_audio_file(song_path)
 
-            # Jeśli repeat_mode to 'one', uruchamiamy repeat_one
             if self.repeat_mode == "one":
                 GObject.timeout_add(100, self.repeat_one)
             else:
@@ -354,7 +402,6 @@ class MusicPlayer:
 
             GObject.timeout_add(100, self.update_bars)
             self.update_now_playing_label_timeout = GLib.timeout_add(1000, self.update_now_playing_label)
-            # Extract and display album cover for the currently playing song
             self.extract_and_display_album_cover(song_path)
 
     def buffer_audio_data(self, file_path):
@@ -470,6 +517,9 @@ class MusicPlayer:
         # Dodaj ikonę brakującego obrazu do obszaru okładki
         self.album_cover_fixed.add(image)
         self.album_cover_fixed.show_all()
+
+    def draw_0(self, widget, cr):
+        pass
 
     def draw_1(self, widget, cr):
         if self.fft_data is not None:
@@ -857,8 +907,13 @@ class MusicPlayer:
                 self.pipeline.set_property("uri", f"file://{encoded_file_path}")
                 self.pipeline.set_state(Gst.State.PLAYING)
                 self.playback_paused = False
+
+                # Ustaw nowo odtwarzany utwór
+                self.now_playing_track = file_path
+
             except Exception as e:
                 print(f"Error while playing audio: {e}")
+
 
 
     def toggle_pause(self, widget):
@@ -890,13 +945,29 @@ class MusicPlayer:
             self.position_scale.set_value(value)
         return True
 
-
     def on_message(self, bus, message):
         t = message.type
         if t == Gst.MessageType.ERROR:
             self.pipeline.set_state(Gst.State.NULL)
             err, debug = message.parse_error()
             print("Error: %s" % err, debug)
+        elif t == Gst.MessageType.EOS:
+            if self.repeat_one_enabled:
+                # Repeat the current song by seeking to the start
+                self.pipeline.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, 0)
+            elif self.repeat_all_enabled:
+                selection = self.playlist_view.get_selection()
+                model, selected_song_iter = selection.get_selected()
+                if selected_song_iter:
+                    next_song_iter = model.iter_next(selected_song_iter)
+                    if not next_song_iter:
+                        next_song_iter = model.get_iter_first()
+                    if next_song_iter:
+                        next_song_path = model.get_value(next_song_iter, 0)
+                        self.play_audio_file(next_song_path)
+            else:
+                self.pipeline.set_state(Gst.State.NULL)
+                print("End-Of-Stream reached")
 
         # Handle track change event
         elif t == Gst.MessageType.STATE_CHANGED:
@@ -905,23 +976,18 @@ class MusicPlayer:
                 if new_state == Gst.State.PLAYING:
                     self.update_now_playing_label()
                     self.update_progress_bar()  # Start updating the progress bar
-                    # Ustaw nazwę aktualnej piosenki na podstawie wybranej iteracji w widoku listy odtwarzania
-                    selection = self.playlist_view.get_selection()
-                    model, selected_song_iter = selection.get_selected()
-                    if selected_song_iter:
-                        self.current_song_name = model.get_value(selected_song_iter, 4)
 
     def update_now_playing_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
-            selection = self.playlist_view.get_selection()
-            model, selected_song_iter = selection.get_selected()
-            if selected_song_iter:
-                title = model.get_value(selected_song_iter, 4)
-                artist = model.get_value(selected_song_iter, 1)
+            if self.now_playing_track:
+                title = os.path.basename(self.now_playing_track)
+                artist = "Unknown Artist"  # Możesz dodać logikę do pobrania informacji o artyście, jeśli są dostępne
                 print(f"Updating Now Playing label with artist: {artist}, title: {title}")
                 self.now_playing_label.set_markup(
                     f'<span font_desc="12">Now Playing:</span> {artist} - {title}')
-
+            else:
+                # Jeśli nie ma aktualnie odtwarzanego utworu, wyczyść etykietę
+                self.now_playing_label.set_markup("")
 
     def update_time_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
@@ -1059,20 +1125,19 @@ class MusicPlayer:
             for line in lines:
                 self.append_song_to_playlist(line)
 
-
-    def repeat_one(self, widget):
+    def toggle_repeat_all(self, widget):
         if self.current_song_name:
-            self.play_audio_file(self.current_song_name)
-            print(f"Current song '{self.current_song_name}' on repeat")
+            song_path = self.get_song_path_by_name(self.current_song_name)
+            if song_path:
+                self.play_audio_file(song_path)
+                GObject.timeout_add(100, self.update_bars)
 
-    def repeat_all(self, widget):
-        selection = self.playlist_view.get_selection()
-        model, selected_song_iter = selection.get_selected()
-
-        if selected_song_iter:
-            song_path = model.get_value(selected_song_iter, 0)
-            self.play_audio_file(song_path)
-            print(f"Next song in playlist '{self.get_song_path_by_name(song_path)}'")
+    def toggle_repeat_one(self, widget):
+        if self.current_song_name:
+            song_path = self.get_song_path_by_name(self.current_song_name)
+            if song_path:
+                self.play_audio_file(song_path)
+                GObject.timeout_add(100, self.update_bars)
 
     def toggle_mute(self, widget):
         if self.muted:
