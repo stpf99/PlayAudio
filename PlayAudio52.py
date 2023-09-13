@@ -468,7 +468,7 @@ class MusicPlayer:
 
             GObject.timeout_add(100, self.update_bars)
             self.update_next_playing_label_timeout = GLib.timeout_add(100, self.update_next_playing_label)
-            self.update_now_playing_label_timeout = GLib.timeout_add(1000, self.update_now_playing_label)
+            self.update_now_playing_label_timeout = GLib.timeout_add(100, self.update_now_playing_label)
             self.update_previous_playing_label_timeout = GLib.timeout_add(100, self.update_previous_playing_label)
             self.extract_and_display_album_cover(song_path)
 
@@ -1029,25 +1029,15 @@ class MusicPlayer:
 
     def update_now_playing_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
-            if self.now_playing_track:
-                audiofile = eyed3.load(self.now_playing_track)
-
-                if audiofile.tag:
-                    title = audiofile.tag.title if audiofile.tag.title else "Unknown Title"
-                    artist = audiofile.tag.artist if audiofile.tag.artist else "Unknown Artist"
-
-                    print(f"Updating Now Playing label with artist: {artist}, title: {title}")
-                    self.now_playing_label.set_markup(
-                        f'<span font_desc="12">Now Playing:</span> {artist} - {title}')
-                else:
-                    # Jeśli nie ma metadanych, użyj tylko nazwy utworu
-                    title = os.path.basename(self.now_playing_track)
-                    print(f"Updating Now Playing label with title: {title}")
-                    self.now_playing_label.set_markup(
-                        f'<span font_desc="12">Now Playing:</span> {title}')
-            else:
-                # Jeśli nie ma aktualnie odtwarzanego utworu, etykieta "Now Playing" zostanie wyczyszczona
-                self.now_playing_label.set_markup("")
+            selection = self.playlist_view.get_selection()
+            model, selected_song_iter = selection.get_selected()
+            if selected_song_iter:
+                title = model.get_value(selected_song_iter, 4)
+                artist = model.get_value(selected_song_iter, 1)
+                self.now_playing_track = title  # Aktualizacja ścieżki aktualnie odtwarzanego utworu
+                self.now_playing_label.set_markup(
+                    f'<span font_desc="12">Now Playing:</span> {artist} - {title}')
+        return True
 
     def update_next_playing_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
