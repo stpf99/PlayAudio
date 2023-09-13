@@ -337,6 +337,7 @@ class MusicPlayer:
 
             # Przekazujemy ścieżkę do pliku audio do funkcji extract_and_display_album_cover
             self.extract_and_display_album_cover(next_song_path)
+            self.update_now_playing_label()
 
     def play_previous_track(self, widget):
         previous_song_iter = self.get_previous_song_iter()
@@ -347,6 +348,7 @@ class MusicPlayer:
 
             # Przekazujemy ścieżkę do pliku audio do funkcji extract_and_display_album_cover
             self.extract_and_display_album_cover(previous_song_path)
+            self.update_now_playing_label()
 
     def visualize(self, widget, cr):
         if self.visualizing:
@@ -987,8 +989,9 @@ class MusicPlayer:
                 self.now_playing_label.set_markup(
                     f'<span font_desc="12">Now Playing:</span> {artist} - {title}')
             else:
-                # Jeśli nie ma aktualnie odtwarzanego utworu, wyczyść etykietę
+                # Jeśli nie ma aktualnie odtwarzanego utworu, etykieta "Now Playing" zostanie wyczyszczona
                 self.now_playing_label.set_markup("")
+
 
     def update_time_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
