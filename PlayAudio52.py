@@ -146,8 +146,14 @@ class MusicPlayer:
 
         self.previous_button = Gtk.Button("Previous")
         self.previous_button.connect("clicked", self.play_previous_track)
-        self.repeat_all_enabled = False
-        self.repeat_one_enabled = False
+        self.repeat_mode = "off" 
+        self.repeat_off_button = Gtk.RadioButton.new_with_label_from_widget(None, "Off")
+        self.repeat_off_button.connect("toggled", self.toggle_repeat_mode, "off")
+        self.repeat_one_button = Gtk.RadioButton.new_with_label_from_widget(self.repeat_off_button, "Repeat One")
+        self.repeat_one_button.connect("toggled", self.toggle_repeat_mode, "one")
+        self.repeat_all_button = Gtk.RadioButton.new_with_label_from_widget(self.repeat_off_button, "Repeat All")
+        self.repeat_all_button.connect("toggled", self.toggle_repeat_mode, "all")
+
 
         self.load_from_dir_button = Gtk.Button("Load Dir")
         self.load_from_dir_button.connect("clicked", self.load_from_dir)
@@ -161,10 +167,7 @@ class MusicPlayer:
         self.save_playlist_button.connect("clicked", self.save_playlist)
         self.load_playlist_button = Gtk.Button("Load Playlist")
         self.load_playlist_button.connect("clicked", self.load_playlist)
-        self.repeat_all_button = Gtk.ToggleButton("Repeat Playlist")
-        self.repeat_all_button.connect("toggled", self.toggle_repeat_all)
-        self.repeat_one_button = Gtk.ToggleButton("Repeat Current")
-        self.repeat_one_button.connect("toggled", self.toggle_repeat_one)
+
         self.mute_button = Gtk.ToggleButton("Mute")
         self.mute_button.connect("toggled", self.toggle_mute)
 
@@ -180,6 +183,7 @@ class MusicPlayer:
         hbox_buttons.pack_start(self.shuffle_playlist_button, True, True, 2)
         hbox_buttons.pack_start(self.save_playlist_button, True, True, 2)
         hbox_buttons.pack_start(self.load_playlist_button, True, True, 2)
+        hbox_buttons.pack_start(self.repeat_off_button, True, True, 2)
         hbox_buttons.pack_start(self.repeat_all_button, True, True, 2)
         hbox_buttons.pack_start(self.repeat_one_button, True, True, 2)
         hbox_buttons.pack_start(self.mute_button, True, True, 2)
@@ -311,23 +315,36 @@ class MusicPlayer:
         # Inne inicjalizacje...
         self.visualizing = False  # Inicjalnie wizualizacja jest wyłączona
 
+        self.repeat_mode = "off"
+        self.repeat_one_enabled = False
+        self.repeat_all_enabled = False
 
 
+    def repeat_one(self):
+        if self.repeat_mode == "one" and self.audio_buffer is None:
+            self.play_audio_file(self.current_song_name)
+            return True
+        elif self.repeat_mode == "one" and self.pipeline.get_state(0)[1] == Gst.State.NULL:
+            self.play_audio_file(self.current_song_name)
+            return True
+        return False
+
+    def toggle_repeat_mode(self, widget, mode):
+        self.repeat_mode = mode
+        if mode == "one":
+            self.repeat_one_enabled = True
+            self.repeat_all_enabled = False
+        elif mode == "all":
+            self.repeat_one_enabled = False
+            self.repeat_all_enabled = True
+        else:
+            self.repeat_one_enabled = False
+            self.repeat_all_enabled = False
 
     def toggle_visualization(self, widget):
         self.visualizing = not self.visualizing  # Zmień stan wizualizacji (włącz/wyłącz)
         self.visualize_button.set_label("Stop Visualization" if self.visualizing else "Visualize")
 
-    def toggle_repeat_mode(self, widget):
-        if self.repeat_mode == "off":
-            self.repeat_mode = "one"
-            print("Repeat mode: Repeat One")
-        elif self.repeat_mode == "one":
-            self.repeat_mode = "all"
-            print("Repeat mode: Repeat All")
-        else:
-            self.repeat_mode = "off"
-            print("Repeat mode: Off")
 
     def on_playlist_view_row_activated(self, view, path, column):
         model = view.get_model()
@@ -345,8 +362,8 @@ class MusicPlayer:
             next_song_path = self.playlist_store.get_value(next_song_iter, 0)
             self.play_audio_file(next_song_path)
             self.current_song_iter = next_song_iter
-            self.update_next_playing_label_timeout = GLib.timeout_add(100, self.update_next_playing_label)
             self.update_now_playing_label_timeout = GLib.timeout_add(1000, self.update_now_playing_label)
+            self.update_next_playing_label_timeout = GLib.timeout_add(100, self.update_next_playing_label)
             self.update_previous_playing_label_timeout = GLib.timeout_add(100, self.update_previous_playing_label)
             # Przekazujemy ścieżkę do pliku audio do funkcji extract_and_display_album_cover
             self.extract_and_display_album_cover(next_song_path)
@@ -972,10 +989,10 @@ class MusicPlayer:
             err, debug = message.parse_error()
             print("Error: %s" % err, debug)
         elif t == Gst.MessageType.EOS:
-            if self.repeat_one_enabled:
+            if self.repeat_mode == "one":
                 # Repeat the current song by seeking to the start
                 self.pipeline.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, 0)
-            elif self.repeat_all_enabled:
+            elif self.repeat_mode == "all":
                 selection = self.playlist_view.get_selection()
                 model, selected_song_iter = selection.get_selected()
                 if selected_song_iter:
@@ -995,7 +1012,7 @@ class MusicPlayer:
                 old_state, new_state, pending_state = message.parse_state_changed()
                 if new_state == Gst.State.PLAYING:
                     self.update_now_playing_label()
-                    self.update_progress_bar()  # Start updating the progress bar
+                    self.update_progress_bar()  # Start updating
 
     def update_now_playing_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
@@ -1180,19 +1197,6 @@ class MusicPlayer:
             for line in lines:
                 self.append_song_to_playlist(line)
 
-    def toggle_repeat_all(self, widget):
-        if self.current_song_name:
-            song_path = self.get_song_path_by_name(self.current_song_name)
-            if song_path:
-                self.play_audio_file(song_path)
-                GObject.timeout_add(100, self.update_bars)
-
-    def toggle_repeat_one(self, widget):
-        if self.current_song_name:
-            song_path = self.get_song_path_by_name(self.current_song_name)
-            if song_path:
-                self.play_audio_file(song_path)
-                GObject.timeout_add(100, self.update_bars)
 
     def toggle_mute(self, widget):
         if self.muted:
