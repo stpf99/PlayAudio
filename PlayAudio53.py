@@ -283,7 +283,7 @@ class MusicPlayer:
 
         self.muted = False
 
-        self.current_song_iter = None
+        self.current_song_iter = False
         self.current_song_name = ""
 
         self.init_gst()
@@ -388,7 +388,6 @@ class MusicPlayer:
         self.play_audio_file(song_path)
         self.current_song_iter = model.get_iter(path)
 
-
         # Ustaw nowo odtwarzany utwór
         self.now_playing_track = song_path
 
@@ -398,7 +397,7 @@ class MusicPlayer:
             next_song_path = self.playlist_store.get_value(next_song_iter, 0)
             self.play_audio_file(next_song_path)
             self.current_song_iter = next_song_iter
-            self.update_now_playing_label_timeout = GLib.timeout_add(1000, self.update_now_playing_label)
+            self.update_now_playing_label_timeout = GLib.timeout_add(100, self.update_now_playing_label)
             self.update_next_playing_label_timeout = GLib.timeout_add(100, self.update_next_playing_label)
             self.update_previous_playing_label_timeout = GLib.timeout_add(100, self.update_previous_playing_label)
             # Przekazujemy ścieżkę do pliku audio do funkcji extract_and_display_album_cover
@@ -412,7 +411,7 @@ class MusicPlayer:
             self.play_audio_file(previous_song_path)
             self.current_song_iter = previous_song_iter
             self.update_next_playing_label_timeout = GLib.timeout_add(100, self.update_next_playing_label)
-            self.update_now_playing_label_timeout = GLib.timeout_add(1000, self.update_now_playing_label)
+            self.update_now_playing_label_timeout = GLib.timeout_add(100, self.update_now_playing_label)
             self.update_previous_playing_label_timeout = GLib.timeout_add(100, self.update_previous_playing_label)
             # Przekazujemy ścieżkę do pliku audio do funkcji extract_and_display_album_cover
             self.extract_and_display_album_cover(previous_song_path)
@@ -434,6 +433,16 @@ class MusicPlayer:
             else:
                 # Obsługa innych opcji wizualizacji
                 pass
+
+    def get_current_song_iter(self):
+        if self.current_song_iter:
+            current_iter = self.current_song_iter
+            if current_iter is not None:
+                return current_iter
+            else:
+                return self.playlist_store.get_iter_current()
+        else:
+            return self.playlist_store.get_iter_first()
 
     def get_next_song_iter(self):
         if self.current_song_iter:
@@ -1027,17 +1036,17 @@ class MusicPlayer:
 
 
 
-    def update_now_playing_label(self):
+    def update_previous_playing_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
-            selection = self.playlist_view.get_selection()
-            model, selected_song_iter = selection.get_selected()
-            if selected_song_iter:
-                title = model.get_value(selected_song_iter, 4)
-                artist = model.get_value(selected_song_iter, 1)
-                self.now_playing_track = title  # Aktualizacja ścieżki aktualnie odtwarzanego utworu
-                self.now_playing_label.set_markup(
-                    f'<span font_desc="12">Now Playing:</span> {artist} - {title}')
-        return True
+            previous_song_iter = self.get_previous_song_iter()
+            if previous_song_iter:
+                title = self.playlist_store.get_value(previous_song_iter, 4)
+                artist = self.playlist_store.get_value(previous_song_iter, 1)
+                print(f"Updating Previous Playing label with artist: {artist}, title: {title}")
+                self.previous_playing_label.set_markup(
+                    f'<span font_desc="12">Previous Track:</span> {artist} - {title}')
+            else:
+                self.previous_playing_label.set_markup("")
 
     def update_next_playing_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
@@ -1051,18 +1060,17 @@ class MusicPlayer:
             else:
                 self.next_playing_label.set_markup("")
 
-    def update_previous_playing_label(self):
+    def update_now_playing_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
-            previous_song_iter = self.get_previous_song_iter()
-            if previous_song_iter:
-                title = self.playlist_store.get_value(previous_song_iter, 4)
-                artist = self.playlist_store.get_value(previous_song_iter, 1)
-                print(f"Updating Previous Playing label with artist: {artist}, title: {title}")
-                self.previous_playing_label.set_markup(
-                    f'<span font_desc="12">Previous Track:</span> {artist} - {title}')
+            current_song_iter = self.get_current_song_iter()
+            if current_song_iter:
+                title = self.playlist_store.get_value(current_song_iter, 4)
+                artist = self.playlist_store.get_value(current_song_iter, 1)
+                print(f"Updating Now Playing label with artist: {artist}, title: {title}")
+                self.now_playing_label.set_markup(
+                    f'<span font_desc="12">Now Up:</span> {artist} - {title}')
             else:
-                self.previous_playing_label.set_markup("")
-
+                self.now_playing_label.set_markup("")
 
     def update_time_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
