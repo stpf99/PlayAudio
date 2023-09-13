@@ -1000,11 +1000,21 @@ class MusicPlayer:
     def update_now_playing_label(self):
         if self.pipeline.get_state(0)[1] == Gst.State.PLAYING:
             if self.now_playing_track:
-                title = os.path.basename(self.now_playing_track)
-                artist = "Unknown Artist"  # Możesz dodać logikę do pobrania informacji o artyście, jeśli są dostępne
-                print(f"Updating Now Playing label with artist: {artist}, title: {title}")
-                self.now_playing_label.set_markup(
-                    f'<span font_desc="12">Now Playing:</span> {artist} - {title}')
+                audiofile = eyed3.load(self.now_playing_track)
+
+                if audiofile.tag:
+                    title = audiofile.tag.title if audiofile.tag.title else "Unknown Title"
+                    artist = audiofile.tag.artist if audiofile.tag.artist else "Unknown Artist"
+
+                    print(f"Updating Now Playing label with artist: {artist}, title: {title}")
+                    self.now_playing_label.set_markup(
+                        f'<span font_desc="12">Now Playing:</span> {artist} - {title}')
+                else:
+                    # Jeśli nie ma metadanych, użyj tylko nazwy utworu
+                    title = os.path.basename(self.now_playing_track)
+                    print(f"Updating Now Playing label with title: {title}")
+                    self.now_playing_label.set_markup(
+                        f'<span font_desc="12">Now Playing:</span> {title}')
             else:
                 # Jeśli nie ma aktualnie odtwarzanego utworu, etykieta "Now Playing" zostanie wyczyszczona
                 self.now_playing_label.set_markup("")
