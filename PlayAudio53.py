@@ -295,7 +295,7 @@ class MusicPlayer:
         self.bus.add_signal_watch()
   
         self.fft_data = None
-        self.pipeline.set_state(Gst.State.NULL)
+        self.pipeline.set_state(Gst.State.READY)
         # Inicjalizacja PyAudio
         self.pa = pyaudio.PyAudio()
         self.stream_audio_input = None  # Strumień audio dla PyAudio
