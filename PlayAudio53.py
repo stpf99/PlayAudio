@@ -472,7 +472,7 @@ class MusicPlayer:
             song_path = model.get_value(selected_song_iter, 0)
             self.play_audio_file(song_path)
 
-            GObject.timeout_add(100, self.update_bars)
+            GLib.timeout_add(100, self.update_bars)
             self.update_next_playing_label_timeout = GLib.timeout_add(100, self.update_next_playing_label)
             self.update_now_playing_label_timeout = GLib.timeout_add(100, self.update_now_playing_label)
             self.update_previous_playing_label_timeout = GLib.timeout_add(100, self.update_previous_playing_label)
@@ -586,7 +586,7 @@ class MusicPlayer:
 
         # Utwórz widżet Gtk.Image z domyślną ikoną brakującego obrazu
         image = Gtk.Image()
-        image.set_from_stock(Gtk.STOCK_MISSING_IMAGE, Gtk.IconSize.LARGE_TOOLBAR)
+        image = Gtk.Image.new_from_icon_name("image-missing", Gtk.IconSize.LARGE_TOOLBAR)
 
         # Dodaj ikonę brakującego obrazu do obszaru okładki
         self.album_cover_fixed.add(image)
@@ -881,7 +881,7 @@ class MusicPlayer:
                 fft_data = np.abs(fft_data[:num_samples])  # Pobierz amplitudy tylko pierwszych próbek
                 
                 self.fft_data = fft_data * progress
-                GObject.idle_add(self.drawing_area.queue_draw)
+                GLib.idle_add(self.drawing_area.queue_draw)
         return True
 
 
@@ -1093,9 +1093,17 @@ class MusicPlayer:
         return True
 
     def load_from_dir(self, widget):
-        dialog = Gtk.FileChooserDialog("Please choose a directory", self.window, Gtk.FileChooserAction.SELECT_FOLDER,
-                                       ("Cancel", Gtk.ResponseType.CANCEL, "Open", Gtk.ResponseType.OK))
-        dialog.set_default_response(Gtk.ResponseType.OK)
+        dialog = Gtk.FileChooserDialog(
+            title="Please choose a directory",
+            parent=self.window,
+            action=Gtk.FileChooserAction.SELECT_FOLDER
+        )
+
+        # Dodaj przyciski
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OPEN, Gtk.ResponseType.OK
+        )
 
         response = dialog.run()
         if response == Gtk.ResponseType.OK:
