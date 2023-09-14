@@ -290,12 +290,6 @@ class MusicPlayer:
         self.update_time_timer = GLib.timeout_add(1000, self.update_time_label)
         self.update_progress_bar_timer = GLib.timeout_add(1000, self.update_progress_bar)  # Add progress bar update timer
   
-        self.pipeline = Gst.ElementFactory.make("playbin", "player")
-        self.bus = self.pipeline.get_bus()
-        self.bus.add_signal_watch()
-  
-        self.fft_data = None
-        self.pipeline.set_state(Gst.State.READY)
         # Inicjalizacja PyAudio
         self.pa = pyaudio.PyAudio()
         self.stream_audio_input = None  # Strumień audio dla PyAudio
@@ -331,6 +325,10 @@ class MusicPlayer:
             return True
         return False
 
+        self.update_now_playing_label_timeout = GLib.timeout_add(100, self.update_now_playing_label)
+        self.update_next_playing_label_timeout = GLib.timeout_add(100, self.update_next_playing_label)
+        self.update_previous_playing_label_timeout = GLib.timeout_add(100, self.update_previous_playing_label)
+
     def repeat_all(self):
         if self.repeat_mode == "all" and self.audio_buffer is None:
             # Pobierz aktualnie odtwarzany utwór
@@ -362,6 +360,10 @@ class MusicPlayer:
             return True
         return False
 
+        self.update_now_playing_label_timeout = GLib.timeout_add(100, self.update_now_playing_label)
+        self.update_next_playing_label_timeout = GLib.timeout_add(100, self.update_next_playing_label)
+        self.update_previous_playing_label_timeout = GLib.timeout_add(100, self.update_previous_playing_label)
+
     def toggle_repeat_mode(self, widget, mode):
         self.repeat_mode = mode
         if mode == "one":
@@ -384,9 +386,9 @@ class MusicPlayer:
         song_path = model[path][0]
         self.play_audio_file(song_path)
         self.current_song_iter = model.get_iter(path)
-
-        # Ustaw nowo odtwarzany utwór
-        self.now_playing_track = song_path
+        self.update_now_playing_label_timeout = GLib.timeout_add(100, self.update_now_playing_label)
+        self.update_next_playing_label_timeout = GLib.timeout_add(100, self.update_next_playing_label)
+        self.update_previous_playing_label_timeout = GLib.timeout_add(100, self.update_previous_playing_label)
 
     def play_next_track(self, widget):
         next_song_iter = self.get_next_song_iter()
