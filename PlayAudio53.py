@@ -1,4 +1,9 @@
 import gi
+import gi
+gi.require_version('Gtk', '3.0')
+gi.require_version('GdkPixbuf', '2.0')
+gi.require_version('Gst', '1.0')
+gi.require_version('GLib', '2.0')
 import os
 import random
 import time
@@ -10,11 +15,6 @@ import numpy as np
 import pyaudio
 from gi.repository import Gtk, Gdk, GObject, GLib, Pango
 import cairo
-gi.require_version('Gtk', '3.0')
-gi.require_version('GdkPixbuf', '2.0')
-gi.require_version('Gst', '1.0')
-gi.require_version('GLib', '2.0')
-
 
 class MusicPlayer:
     def __init__(self):
@@ -52,8 +52,7 @@ class MusicPlayer:
 
         self.playlist_store = Gtk.ListStore(str, str, str, str, str)
         self.original_playlist = []  # Przechowuje oryginalną listę odtwarzania przed filtrowaniem
-        self.playlist_view = Gtk.TreeView(self.playlist_store)
-        self.playlist_view.set_rules_hint(True)
+        self.playlist_view = Gtk.TreeView(model=self.playlist_store)
         # Kolumna "Filename"
         renderer = Gtk.CellRendererText()
         renderer.set_property("ellipsize", Pango.EllipsizeMode.END)
@@ -110,7 +109,7 @@ class MusicPlayer:
 
         # Create an HPaned container to split the window horizontally
         self.hpaned = Gtk.HPaned()
-        vbox = Gtk.VBox(False, 0)
+        vbox = Gtk.VBox(homogeneous=False, spacing=0)
         vbox.pack_start(self.previous_playing_label, False, False, 2)
         vbox.pack_start(self.now_playing_label, False, False, 2)
         vbox.pack_start(self.next_playing_label, False, False, 2)
@@ -135,16 +134,16 @@ class MusicPlayer:
         # Add the album cover fixed container to the right side of the HPaned
         self.hpaned.pack2(self.album_cover_fixed, False, False)
 
-        self.play_button = Gtk.Button("Play")
+        self.play_button = Gtk.Button(label="Play")
         self.play_button.connect("clicked", self.play)
-        self.pause_button = Gtk.Button("Pause")
+        self.pause_button = Gtk.Button(label="Pause")
         self.pause_button.connect("clicked", self.toggle_pause)
-        self.stop_button = Gtk.Button("Stop")
+        self.stop_button = Gtk.Button(label="Stop")
         self.stop_button.connect("clicked", self.stop)
-        self.next_button = Gtk.Button("Next")
+        self.next_button = Gtk.Button(label="Next")
         self.next_button.connect("clicked", self.play_next_track)
 
-        self.previous_button = Gtk.Button("Previous")
+        self.previous_button = Gtk.Button(label="Previous")
         self.previous_button.connect("clicked", self.play_previous_track)
         self.repeat_mode = "off" 
         self.repeat_off_button = Gtk.RadioButton.new_with_label_from_widget(None, "Off")
@@ -155,23 +154,23 @@ class MusicPlayer:
         self.repeat_all_button.connect("toggled", self.toggle_repeat_mode, "all")
 
 
-        self.load_from_dir_button = Gtk.Button("Load Dir")
+        self.load_from_dir_button = Gtk.Button(label="Load Dir")
         self.load_from_dir_button.connect("clicked", self.load_from_dir)
-        self.append_from_file_button = Gtk.Button("Append File")
+        self.append_from_file_button = Gtk.Button(label="Append File")
         self.append_from_file_button.connect("clicked", self.append_from_file)
-        self.clear_playlist_button = Gtk.Button("Clear Playlist")
+        self.clear_playlist_button = Gtk.Button(label="Clear Playlist")
         self.clear_playlist_button.connect("clicked", self.clear_playlist)
-        self.shuffle_playlist_button = Gtk.Button("Shuffle Playlist")
+        self.shuffle_playlist_button = Gtk.Button(label="Shuffle Playlist")
         self.shuffle_playlist_button.connect("clicked", self.shuffle_playlist)
-        self.save_playlist_button = Gtk.Button("Save Playlist")
+        self.save_playlist_button = Gtk.Button(label="Save Playlist")
         self.save_playlist_button.connect("clicked", self.save_playlist)
-        self.load_playlist_button = Gtk.Button("Load Playlist")
+        self.load_playlist_button = Gtk.Button(label="Load Playlist")
         self.load_playlist_button.connect("clicked", self.load_playlist)
 
-        self.mute_button = Gtk.ToggleButton("Mute")
+        self.mute_button = Gtk.ToggleButton(label="Mute")
         self.mute_button.connect("toggled", self.toggle_mute)
 
-        hbox_buttons = Gtk.HBox(False, 0)
+        hbox_buttons = Gtk.HBox(homogeneous=False, spacing=0)
         hbox_buttons.pack_start(self.play_button, True, True, 2)
         hbox_buttons.pack_start(self.pause_button, True, True, 2)
         hbox_buttons.pack_start(self.stop_button, True, True, 2)
@@ -188,10 +187,8 @@ class MusicPlayer:
         hbox_buttons.pack_start(self.repeat_one_button, True, True, 2)
         hbox_buttons.pack_start(self.mute_button, True, True, 2)
 
-        self.time_label = Gtk.Label("00:00:00 / 00:00:00")
+        self.time_label = Gtk.Label(label="00:00:00 / 00:00:00")
         self.time_label.set_name("time-label")
-        self.time_label.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(0, 0, 0, 1))
-        self.time_label.override_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(1, 1, 1, 1))
         hbox_buttons.pack_start(self.time_label, False, False, 2)
 
         self.search_entry = Gtk.Entry()
@@ -214,12 +211,12 @@ class MusicPlayer:
         self.visualization_type_combo.append_text("Tonal Transition")
         self.visualization_type_combo.set_active(0)  # Domyślnie wybierz "None"
         # Dodaj przycisk "Search"
-        self.search_button = Gtk.Button("Search")
+        self.search_button = Gtk.Button(label="Search")
         self.search_button.connect("clicked", self.search_playlist)
         # Dodaj przycisk "Visualize"
-        self.visualize_button = Gtk.Button("Visualize")
+        self.visualize_button = Gtk.Button(label="Visualize")
         self.visualize_button.connect("clicked", self.toggle_visualization)
-        hbox_search = Gtk.HBox(False, 0)
+        hbox_search = Gtk.HBox(homogeneous=False, spacing=0)
         hbox_search.pack_start(self.search_type_combo, False, False, 2)  # Dodaj rozwijalną listę
         hbox_search.pack_start(self.search_entry, True, True, 2)
         hbox_search.pack_start(self.search_button, False, False, 2)
@@ -227,7 +224,7 @@ class MusicPlayer:
         size = 200  # Stały rozmiar obszaru rysowania
         self.drawing_area.set_size_request(size, size)  # Ustaw rozmiar obszaru rysowania na stały rozmiar
         self.drawing_area.connect("draw", self.visualize)
-        hbox_visualization = Gtk.HBox(False, 0)
+        hbox_visualization = Gtk.HBox(homogeneous=False, spacing=0)
         hbox_visualization.pack_start(self.visualization_type_combo, False, False, 2)  # Dodaj rozwijalną listę
         hbox_visualization.pack_start(self.visualize_button, False, False, 2)
 
@@ -298,7 +295,7 @@ class MusicPlayer:
         self.bus.add_signal_watch()
   
         self.fft_data = None
-        self.pipeline.set_state(Gst.State.READY)
+        self.pipeline.set_state(Gst.State.NULL)
         # Inicjalizacja PyAudio
         self.pa = pyaudio.PyAudio()
         self.stream_audio_input = None  # Strumień audio dla PyAudio
