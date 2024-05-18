@@ -1,7 +1,7 @@
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gst', '1.0')
-from gi.repository import Gtk, GdkPixbuf, Gst
+from gi.repository import Gtk, GdkPixbuf, Gst, GLib
 import os
 import eyed3
 
@@ -11,13 +11,15 @@ class MusicPlayerWindow(Gtk.Window):
     def __init__(self):
         Gtk.Window.__init__(self, title="Music Player with Equalizer")
         self.set_default_size(600, 500)
-        
+        self.current_m3u_path = None  # Inicjalizacja zmiennej globalnej
         self.current_playlist_store_index = -1
         self.playlist_store = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str, str, str)
         self.current_cover = Gtk.Image()
+        self.playlists = {}  # Słownik do przechowywania playlist
         self.eq_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         self.init_gstreamer()
         self.init_ui()
+
         
     def init_ui(self):
         hbox_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
@@ -144,10 +146,19 @@ class MusicPlayerWindow(Gtk.Window):
         self.current_cover = Gtk.Image()
         hbox.pack_start(self.current_cover, False, False, 0)
 
-        self.playlists_listbox = Gtk.ListBox()
+        self.playlists_treeview = Gtk.TreeView()
+        self.playlists_store = Gtk.ListStore(str)
+        self.playlists_treeview.set_model(self.playlists_store)
+
+        renderer = Gtk.CellRendererText()
+        column = Gtk.TreeViewColumn("Playlists", renderer, text=0)
+        self.playlists_treeview.append_column(column)
+
         scrolled_window = Gtk.ScrolledWindow()
-        scrolled_window.add(self.playlists_listbox)
+        scrolled_window.add(self.playlists_treeview)
         vbox.pack_start(scrolled_window, True, True, 0)
+
+        self.playlists_treeview.connect("cursor-changed", self.on_playlist_selected)
          
     def create_playlist_names(self, vbox):
         self.playlists_listbox = Gtk.ListBox()
@@ -233,7 +244,10 @@ class MusicPlayerWindow(Gtk.Window):
         filter_m3u.add_pattern("*.m3u")
         return filter_m3u
     
+
     def load_m3u_playlist(self, m3u_path):
+        self.current_playlist_store_index = -1
+
         base_path = os.path.dirname(m3u_path)
         with open(m3u_path, 'r') as f:
             for line in f:
@@ -247,17 +261,38 @@ class MusicPlayerWindow(Gtk.Window):
 
         # Get the playlist name from the M3U file name
         playlist_name = os.path.splitext(os.path.basename(m3u_path))[0]
-        # Add the playlist name to the list
-        row = Gtk.ListBoxRow()
-        label = Gtk.Label(label=playlist_name)
-        row.add(label)
-        self.playlists_listbox.add(row)
-        label.connect("activate-link", self.on_playlist_name_clicked, m3u_path)
+        self.playlists[playlist_name] = m3u_path  # Dodaj playlistę do słownika
 
+        # Zaktualizuj listę playlist
+        self.playlists_store.clear()
+        for playlist in self.playlists:
+            self.playlists_store.append([playlist])
+
+    def on_playlist_selected(self, treeview):
+        selection = treeview.get_selection()
+        model, iter = selection.get_selected()
+        if iter:
+            playlist_name = model.get_value(iter, 0)
+            m3u_path = self.playlists[playlist_name]
+            self.load_m3u_playlist_delayed(m3u_path)
+
+    def load_m3u_playlist_delayed(self, m3u_path):
+        self.playlist_store.clear()
+        GLib.timeout_add(500, self.load_m3u_playlist, m3u_path)
     def on_playlist_name_clicked(self, widget, m3u_path):
-        self.on_stop_clicked(None)
-        self.playlist_store.clear()  # Zakładając, że `self.playlist_store` jest `Gtk.ListStore`
-        self.load_m3u_playlist(m3u_path)
+        if self.current_m3u_path:
+            self.on_stop_clicked(None)
+            self.playlist_store.clear()
+        
+            # Znajdź indeks klikniętej pozycji na liście
+            for i, row in enumerate(self.playlists_listbox.get_children()):
+                if row.get_child() == widget:
+                    self.current_playlist_store_index = i
+                    break
+            else:
+                self.current_playlist_store_index = -1
+        
+            self.load_m3u_playlist(self.current_m3u_path)
          
     def cover_data_func(self, column, cell, model, iter, data):
         pixbuf = model.get_value(iter, 0)
@@ -270,7 +305,6 @@ class MusicPlayerWindow(Gtk.Window):
     def on_row_activated(self, treeview, path, column):
         self.on_stop_clicked(self)
         iter = treeview.get_model().get_iter(path)
-        self.current_playlist_index = path.get_indices()[0]
         file_path = treeview.get_model().get_value(iter, 1)
         cover = treeview.get_model().get_value(iter, 0)
         self.load_and_play_file(file_path)
@@ -278,6 +312,9 @@ class MusicPlayerWindow(Gtk.Window):
             self.current_cover.set_from_pixbuf(cover.scale_simple(150, 150, GdkPixbuf.InterpType.BILINEAR))
         else:
             self.current_cover.clear()
+    
+        if self.current_playlist_store_index >= 0:
+            self.current_playlist_store_index = path.get_indices()[0]
 
     def on_prev_clicked(self, widget):
         self.on_stop_clicked(self)
