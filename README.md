@@ -7,5 +7,5 @@
 
 
 
-<img width="964" alt="playaudio54final" src="https://github.com/stpf99/PlayAudio/blob/6a467e6b37a97a8fc2b66cbe988083f51cb20d9a/PLAYAUDIO_NG/NG3alpha.png">
+<img width="964" alt="playaudio54final" src="https://github.com/stpf99/PlayAudio/blob/f9d5af1f7eeb065da7ae010263943fc29d47df24/PLAYAUDIO_NG/NG3alpha.png">
 PLAYAUDIO_NG/playaudioNG-EQ2types-presetsave3-alpha.py
